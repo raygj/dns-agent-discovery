@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: etcd
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: dns-agent-discovery
+    app.kubernetes.io/component: etcd
+spec:
+  replicas: {{ .Values.etcd.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dns-agent-discovery
+      app.kubernetes.io/component: etcd
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dns-agent-discovery
+        app.kubernetes.io/component: etcd
+    spec:
+      containers:
+        - name: etcd
+          image: {{ .Values.etcd.image }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 2379
+              name: client
+            - containerPort: 2380
+              name: peer
+          env:
+            - name: ETCD_NAME
+              value: etcd0
+            - name: ETCD_LISTEN_CLIENT_URLS
+              value: http://0.0.0.0:2379
+            - name: ETCD_ADVERTISE_CLIENT_URLS
+              value: http://etcd.{{ .Values.namespace }}.svc.{{ .Values.clusterDomain }}:2379
+            - name: ETCD_LISTEN_PEER_URLS
+              value: http://0.0.0.0:2380
+            - name: ETCD_INITIAL_ADVERTISE_PEER_URLS
+              value: http://etcd.{{ .Values.namespace }}.svc.{{ .Values.clusterDomain }}:2380
+            - name: ETCD_INITIAL_CLUSTER
+              value: etcd0=http://etcd.{{ .Values.namespace }}.svc.{{ .Values.clusterDomain }}:2380
+            - name: ETCD_INITIAL_CLUSTER_STATE
+              value: new
+            - name: ETCD_INITIAL_CLUSTER_TOKEN
+              value: dns-agent-discovery
+          resources:
+            {{- toYaml .Values.etcd.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 2379
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 2379
+            initialDelaySeconds: 10
+            periodSeconds: 10

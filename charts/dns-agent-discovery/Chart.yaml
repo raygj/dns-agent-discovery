@@ -1,0 +1,14 @@
+apiVersion: v2
+name: dns-agent-discovery
+description: K8s-native DNS agent discovery — CoreDNS + etcd for agents.* sub-zone
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - dns
+  - agent-discovery
+  - coredns
+  - etcd
+  - mcp
+maintainers:
+  - name: Jim Ray

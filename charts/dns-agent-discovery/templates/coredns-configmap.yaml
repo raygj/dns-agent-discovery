@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-coredns
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: dns-agent-discovery
+    app.kubernetes.io/component: coredns
+data:
+  Corefile: |
+    agents.{{ .Values.clusterDomain }} {
+        etcd {
+            path {{ .Values.coredns.etcdPath }}
+            endpoint http://etcd.{{ .Values.namespace }}.svc.{{ .Values.clusterDomain }}:2379
+        }
+        errors
+        log
+    }
+
+    .:53 {
+        health :8080
+        ready :8181
+        prometheus :9153
+        forward . /etc/resolv.conf
+        cache 30
+        errors
+    }
