@@ -1,0 +1,44 @@
+name: dns-agent-discovery-demo
+
+services:
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.21
+    ports:
+      - "2379:2379"
+    environment:
+      ETCD_NAME: etcd0
+      ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
+      ETCD_ADVERTISE_CLIENT_URLS: http://etcd:2379
+      ETCD_LISTEN_PEER_URLS: http://0.0.0.0:2380
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://etcd:2380
+      ETCD_INITIAL_CLUSTER: etcd0=http://etcd:2380
+      ETCD_INITIAL_CLUSTER_STATE: new
+      ETCD_INITIAL_CLUSTER_TOKEN: dad-demo
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  coredns:
+    image: coredns/coredns:1.12.0
+    command: ["-conf", "/etc/coredns/Corefile"]
+    volumes:
+      - ./Corefile:/etc/coredns/Corefile:ro
+    ports:
+      - "5353:53/udp"
+      - "5353:53/tcp"
+    depends_on:
+      etcd:
+        condition: service_healthy
+
+  bootstrap:
+    build:
+      context: .
+      dockerfile: Dockerfile.bootstrap
+    environment:
+      ETCD_URL: http://etcd:2379
+      DNS_HOST: coredns
+      DNS_PORT: "53"
+    depends_on:
+      - coredns

@@ -1,4 +1,4 @@
-.PHONY: all build test lint helm-lint helm-template deploy smoke clean
+.PHONY: all build test lint helm-lint helm-template deploy smoke demo ci clean
 
 MODULE := github.com/raygj/dns-agent-discovery
 BIN := bin/dad
@@ -23,7 +23,7 @@ helm-lint:
 	helm lint $(CHART)
 
 helm-template:
-	helm template dns-agent-discovery $(CHART) --dry-run
+	helm template dns-agent-discovery $(CHART) --dry-run=client > /dev/null
 
 deploy:
 	helm upgrade --install dns-agent-discovery $(CHART) \
@@ -57,6 +57,19 @@ smoke: build deploy
 	@echo "=== lookup after deregister (expect failure) ==="
 	DAD_DNS_SERVER=$(NODE_IP):$(DNS_PORT) \
 	$(BIN) lookup db-reader && exit 1 || echo "NXDOMAIN confirmed"
+
+demo:
+	cd demo && ./try.sh
+
+ci: build test lint helm-lint
+	helm template dns-agent-discovery $(CHART) --dry-run=client > /dev/null
+	@command -v govulncheck >/dev/null 2>&1 || go install golang.org/x/vuln/cmd/govulncheck@latest
+	@PATH="$$(go env GOPATH)/bin:$$PATH" govulncheck ./...
+	@go test ./... -count=1 -coverprofile=coverage.out
+	@go tool cover -func=coverage.out | tail -1
+	@total=$$(go tool cover -func=coverage.out | awk '/total:/ {gsub(/%/,"",$$3); print $$3}'); \
+	 echo "Coverage: $$total%"; \
+	 awk -v c="$$total" 'BEGIN { exit (c+0 >= 60) ? 0 : 1 }'
 
 clean:
 	rm -rf bin/

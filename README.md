@@ -112,7 +112,8 @@ Example lookup result:
 | **NodePort lab access** — direct DNS/etcd from host | ✅ | |
 | **SkyDNS/etcd record format** — CoreDNS-compatible keys | ✅ | |
 | **Smoke test** — register → lookup → deregister → NXDOMAIN | ✅ | |
-| **CI pipeline** — lint, test, helm lint/template, govulncheck | ✅ skeleton | full gate enforcement |
+| **Docker demo** — `demo/try.sh` local stack, no Kubernetes | ✅ | |
+| **CI pipeline** — lint, test, coverage ≥60%, govulncheck, helm | ✅ | cluster smoke in CI |
 | **Cluster DNS delegation** — NS record from kube-dns to agent-coredns | | 🔜 |
 | **Forge commune integration tests** — 8-scenario validation plan (ADR) | | 🔜 |
 | **Registration auth** — etcd ACL + NetworkPolicy, mTLS on write path | | 🔜 |
@@ -124,12 +125,48 @@ Example lookup result:
 
 ---
 
-## Quick Start
+## CI
 
-Requires Go 1.23+, Helm, and a Kubernetes cluster (tested on Colima/Talos).
+All gates run on push/PR to `main` via [GitHub Actions](.github/workflows/ci.yml). Run locally:
 
 ```bash
-# Build the CLI
+make ci
+```
+
+| Gate | Tool | Pass criteria | Local command |
+|------|------|---------------|---------------|
+| **Build** | `go build` | `dad` compiles | `make build` |
+| **Unit tests** | `go test` | 100% pass | `make test` |
+| **Coverage** | `go tool cover` | ≥ 60% statements | `go test ./... -coverprofile=coverage.out && go tool cover -func=coverage.out` |
+| **Lint** | `golangci-lint` v2 | 0 issues | `make lint` |
+| **Vuln scan** | `govulncheck` | 0 vulns in your code | `govulncheck ./...` |
+| **Helm lint** | `helm lint` | clean | `make helm-lint` |
+| **Helm template** | `helm template` | renders | `make helm-template` |
+| **Demo smoke** | Docker Compose | register → lookup OK | `make demo` |
+| **Cluster smoke** | Helm + `dad` | full ADR scenario | `make smoke NODE_IP=<node>` |
+
+Current local baseline: **~67%** statement coverage (`pkg/discovery` ~94%, `pkg/registration` ~93%).
+
+---
+
+## Quick Start
+
+### Try it in 5 seconds (no Kubernetes)
+
+Requires Docker only.
+
+```bash
+cd demo
+./try.sh
+```
+
+Docker Compose spins up etcd + agent-coredns, registers a sample agent, and verifies DNS lookup. See [demo/README.md](demo/README.md).
+
+### Full cluster deploy
+
+Requires Go 1.23+ (toolchain **1.26.4** recommended), Helm, and a Kubernetes cluster (tested on Colima/Talos).
+
+```bash
 make build
 
 # Deploy CoreDNS + etcd

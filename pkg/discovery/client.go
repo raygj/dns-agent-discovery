@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 )
+
 type Client struct {
 	Zone     string
 	Resolver *Resolver

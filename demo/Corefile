@@ -1,0 +1,16 @@
+agents.cluster.local {
+    etcd {
+        path /skydns
+        endpoint http://etcd:2379
+    }
+    errors
+    log
+}
+
+.:53 {
+    health :8080
+    ready  :8181
+    forward . /etc/resolv.conf
+    cache 30
+    errors
+}

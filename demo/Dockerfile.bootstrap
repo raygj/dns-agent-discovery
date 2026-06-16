@@ -1,0 +1,8 @@
+FROM alpine:3.20
+
+RUN apk add --no-cache bind-tools curl
+
+COPY bootstrap.sh /bootstrap.sh
+RUN chmod +x /bootstrap.sh
+
+ENTRYPOINT ["/bootstrap.sh"]

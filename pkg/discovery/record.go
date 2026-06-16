@@ -7,14 +7,14 @@ import (
 
 // AgentRecord holds DNS pointer-layer metadata for a discovered agent.
 type AgentRecord struct {
-	Capability string   `json:"capability"`
-	URL        string   `json:"url"`
-	Caps       []string `json:"caps"`
-	Proto      string   `json:"proto"`
-	SRVHost    string   `json:"srv_host,omitempty"`
-	SRVPort    uint16   `json:"srv_port,omitempty"`
-	SRVPriority uint16  `json:"srv_priority,omitempty"`
-	SRVWeight   uint16  `json:"srv_weight,omitempty"`
+	Capability  string   `json:"capability"`
+	URL         string   `json:"url"`
+	Caps        []string `json:"caps"`
+	Proto       string   `json:"proto"`
+	SRVHost     string   `json:"srv_host,omitempty"`
+	SRVPort     uint16   `json:"srv_port,omitempty"`
+	SRVPriority uint16   `json:"srv_priority,omitempty"`
+	SRVWeight   uint16   `json:"srv_weight,omitempty"`
 }
 
 // ParseTXTStrings extracts url, caps, and proto from SkyDNS-style TXT strings.

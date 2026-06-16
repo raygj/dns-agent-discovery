@@ -103,7 +103,7 @@ func cmdRegister(ctx context.Context, args []string) {
 	if err != nil {
 		fatal(err.Error())
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	if err := store.Register(ctx, registration.RegisterOptions{
 		Capability: args[0],
@@ -124,7 +124,7 @@ func cmdDeregister(ctx context.Context, args []string) {
 	if err != nil {
 		fatal(err.Error())
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	if err := store.Deregister(ctx, args[0]); err != nil {
 		fatal(err.Error())
@@ -140,7 +140,7 @@ func cmdList(ctx context.Context, args []string) {
 	if err != nil {
 		fatal(err.Error())
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	entries, err := store.List(ctx)
 	if err != nil {
@@ -172,7 +172,7 @@ func cmdHealth(ctx context.Context, args []string) {
 		fmt.Fprintf(os.Stderr, "etcd: FAIL — %v\n", err)
 		os.Exit(1)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	if err := store.Ping(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "etcd: FAIL — %v\n", err)

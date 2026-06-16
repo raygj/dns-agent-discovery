@@ -1,12 +1,17 @@
+version: "2"
+
 run:
   timeout: 5m
   tests: true
   modules-download-mode: readonly
 
+formatters:
+  enable:
+    - gofmt
+
 linters:
   enable:
     - errcheck
-    - gofmt
     - govet
     - ineffassign
     - staticcheck

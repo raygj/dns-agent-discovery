@@ -14,7 +14,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.23"
+          go-version: "1.26.4"
 
       - name: Download modules
         run: go mod download
@@ -22,8 +22,12 @@ jobs:
       - name: Unit tests
         run: go test ./... -count=1 -coverprofile=coverage.out
 
-      - name: Coverage report
-        run: go tool cover -func=coverage.out | tail -1
+      - name: Coverage check
+        run: |
+          go tool cover -func=coverage.out | tail -1
+          total=$(go tool cover -func=coverage.out | awk '/total:/ {gsub(/%/,"",$3); print $3}')
+          echo "Coverage: ${total}%"
+          awk -v c="$total" 'BEGIN { exit (c+0 >= 60) ? 0 : 1 }'
 
       - name: govulncheck
         run: |
@@ -43,7 +47,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.23"
+          go-version: "1.26.4"
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6

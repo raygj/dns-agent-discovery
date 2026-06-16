@@ -29,14 +29,25 @@ func TestParseSRVFromURL(t *testing.T) {
 		url      string
 		wantHost string
 		wantPort uint16
+		wantErr  bool
 	}{
-		{"https://mcp.internal/v1/agents/db-reader", "mcp.internal.", 443},
-		{"http://localhost:8080/path", "localhost.", 8080},
-		{"http://example.com", "example.com.", 80},
+		{"https://mcp.internal/v1/agents/db-reader", "mcp.internal.", 443, false},
+		{"http://localhost:8080/path", "localhost.", 8080, false},
+		{"http://example.com", "example.com.", 80, false},
+		{"ftp://example.com", "example.com.", 443, false},
+		{"http:///nohost", "", 0, true},
+		{"http://example.com:99999", "", 0, true},
+		{"://bad", "", 0, true},
 	}
 
 	for _, tt := range tests {
 		host, port, err := parseSRVFromURL(tt.url)
+		if tt.wantErr {
+			if err == nil {
+				t.Errorf("%s: expected error", tt.url)
+			}
+			continue
+		}
 		if err != nil {
 			t.Errorf("%s: unexpected error: %v", tt.url, err)
 			continue

@@ -6,12 +6,12 @@ import (
 
 func TestParseTXTStrings(t *testing.T) {
 	tests := []struct {
-		name    string
-		txts    []string
-		wantURL string
+		name      string
+		txts      []string
+		wantURL   string
 		wantProto string
-		wantCaps []string
-		wantErr bool
+		wantCaps  []string
+		wantErr   bool
 	}{
 		{
 			name: "full record",
@@ -30,8 +30,8 @@ func TestParseTXTStrings(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "url only",
-			txts: []string{"url=http://localhost:8080"},
+			name:    "url only",
+			txts:    []string{"url=http://localhost:8080"},
 			wantURL: "http://localhost:8080",
 		},
 	}
