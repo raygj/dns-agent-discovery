@@ -1,27 +1,153 @@
 # dns-agent-discovery
 
-K8s-native DNS agent discovery — CoreDNS + etcd sub-zone authority for `agents.<cluster-domain>`.
+K8s-native DNS agent discovery — a lightweight pointer layer for agents and MCP-compatible tool servers at runtime.
 
-See [ADR-001](ADR-001-dns-agent-discovery.md) for architecture decisions.
+DNS records answer *where* an agent lives and *what* it can do. MCP schema exchange happens afterward at the application layer via `tools/list`. See [ADR-001](ADR-001-dns-agent-discovery.md) for the full architecture decision.
 
-## Quick Start (Colima / local K8s)
+**Status:** v0.1.0 prototype — deployed and smoke-tested on Colima/Talos.
+
+---
+
+## Problem
+
+Agentic systems need to find each other without hardcoded endpoints, static service meshes, or bespoke registries. Those approaches couple orchestration to deployment topology and break under ephemeral workloads.
+
+DNS is already everywhere. Standard `TXT` and `SRV` records are enough to encode endpoint URIs, capability tags, and protocol hints — without stuffing tool schemas into the name resolution plane.
+
+---
+
+## Core System
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           Kubernetes Cluster                            │
+│                                                                         │
+│  ┌─────────────────────┐         register / deregister                  │
+│  │  Agent or Operator  │──────────────────────────────────────┐         │
+│  │  (dad CLI / Go lib) │                                      │         │
+│  └──────────┬──────────┘                                      ▼         │
+│             │ lookup (DNS)                         ┌──────────────────┐ │
+│             │                                      │       etcd       │ │
+│             │                                      │  /skydns/...     │ │
+│             │                                      │  SkyDNS JSON     │ │
+│             │                                      └────────▲─────────┘ │
+│             │                                               │           │
+│             ▼                                               │ read      │
+│  ┌─────────────────────┐                                    │           │
+│  │    agent-coredns    │────────────────────────────────────┘           │
+│  │ agents.cluster.local│  etcd plugin, TTL=1s, no zone cache            │
+│  │   (Helm deploy)     │                                                │
+│  └──────────┬──────────┘                                                │
+│             │                                                           │
+│  ┌──────────▼──────────┐                                                │
+│  │  Cluster CoreDNS      │  NS delegation (future):                     │
+│  │  (kube-dns)           │  agents.* → agent-coredns                     │
+│  └─────────────────────┘  not required for NodePort lab access          │
+│                                                                         │
+│  NodePort (lab):  DNS 30053/udp   etcd 32379/tcp                        │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### DNS Zone Layout
+
+```
+agents.<cluster-domain>.                         NS    agent-coredns
+<capability>.agents.<cluster-domain>.            TXT   "url=..." "proto=mcp" "caps=..."
+<capability>.agents.<cluster-domain>.            SRV   0 5 <port> <hostname>.
+```
+
+Records are stored in etcd using the [CoreDNS SkyDNS format](https://coredns.io/plugins/etcd/) — one key per TXT string (`/txt0`, `/txt1`, …) plus a `/srv` key. TTL defaults to **1 second** for ephemeral agent lifecycles.
+
+---
+
+## Discovery Workflow
+
+```
+  Orchestrator / Agent                    agent-coredns              etcd
+        │                                      │                      │
+        │  1. needs capability "db-reader"     │                      │
+        │                                      │                      │
+        │  2. DNS TXT+SRV query                  │                      │
+        │     db-reader.agents.cluster.local     │                      │
+        │─────────────────────────────────────▶│                      │
+        │                                      │  3. prefix lookup    │
+        │                                      │─────────────────────▶│
+        │                                      │◀─────────────────────│
+        │  4. TXT: url, caps, proto              │                      │
+        │     SRV: port, hostname                │                      │
+        │◀─────────────────────────────────────│                      │
+        │                                      │                      │
+        │  5. connect to returned URL            │                      │
+        │     (HTTP/SSE/stdio)                   │                      │
+        │                                      │                      │
+        │  6. MCP tools/list — schema exchange   │                      │
+        │     DNS is done. MCP takes over.       │                      │
+        ▼                                      │                      │
+```
+
+Example lookup result:
+
+```json
+{
+  "capability": "db-reader",
+  "url": "https://mcp.internal/v1/agents/db-reader",
+  "caps": ["sql", "crypto"],
+  "proto": "mcp",
+  "srv_host": "mcp.internal",
+  "srv_port": 443
+}
+```
+
+---
+
+## Release Roadmap
+
+| Capability | v0.1.0 (current) | Planned |
+|---|---|---|
+| **Helm chart** — CoreDNS + etcd single-chart deploy | ✅ | |
+| **`agents.*` sub-zone** — delegated authority with TTL=1s | ✅ | |
+| **Go discovery library** — `Lookup()` via TXT+SRV | ✅ | |
+| **Go registration library** — `Register()`, `Deregister()`, `List()` | ✅ | |
+| **`dad` CLI** — lookup, register, deregister, list, health | ✅ | |
+| **NodePort lab access** — direct DNS/etcd from host | ✅ | |
+| **SkyDNS/etcd record format** — CoreDNS-compatible keys | ✅ | |
+| **Smoke test** — register → lookup → deregister → NXDOMAIN | ✅ | |
+| **CI pipeline** — lint, test, helm lint/template, govulncheck | ✅ skeleton | full gate enforcement |
+| **Cluster DNS delegation** — NS record from kube-dns to agent-coredns | | 🔜 |
+| **Forge commune integration tests** — 8-scenario validation plan (ADR) | | 🔜 |
+| **Registration auth** — etcd ACL + NetworkPolicy, mTLS on write path | | 🔜 |
+| **DNS-AID alignment** — schema migration when IETF draft ratifies | | 🔜 |
+| **Cross-cluster discovery** — federated agent lookup | | future ADR |
+| **Health-aware registration** — readiness beyond TTL expiry | | future ADR |
+| **Red team gate** — pre-release security review checklist | | 🔜 |
+| **Published releases** — tagged Go module + Helm chart OCI | | 🔜 |
+
+---
+
+## Quick Start
+
+Requires Go 1.23+, Helm, and a Kubernetes cluster (tested on Colima/Talos).
 
 ```bash
-# Build CLI
+# Build the CLI
 make build
 
-# Deploy CoreDNS + etcd to cluster
+# Deploy CoreDNS + etcd
 make deploy
 
-# Run integration smoke test
+# Full integration smoke test (set NODE_IP to your cluster node)
 make smoke NODE_IP=192.168.1.98
 ```
+
+---
 
 ## CLI: `dad`
 
 ```bash
 # Health check
-dad --dns-server 192.168.1.98:30053 --etcd-endpoints http://192.168.1.98:32379 health
+dad --dns-server 192.168.1.98:30053 \
+    --etcd-endpoints http://192.168.1.98:32379 \
+    health
 
 # Register an agent capability
 dad register db-reader https://mcp.internal/v1/agents/db-reader --caps sql,crypto
@@ -29,32 +155,53 @@ dad register db-reader https://mcp.internal/v1/agents/db-reader --caps sql,crypt
 # Lookup via DNS
 dad --dns-server 192.168.1.98:30053 lookup db-reader
 
-# List all registered agents (etcd)
+# List all registered agents (reads etcd directly)
 dad list
 
 # Deregister
 dad deregister db-reader
 ```
 
-Environment variables: `DAD_CLUSTER_DOMAIN`, `DAD_DNS_SERVER`, `DAD_ETCD_ENDPOINTS`, `DAD_ETCD_PATH`.
+| Flag / Env | Default | Description |
+|---|---|---|
+| `--cluster-domain` / `DAD_CLUSTER_DOMAIN` | `cluster.local` | Cluster domain suffix |
+| `--dns-server` / `DAD_DNS_SERVER` | `127.0.0.1:53` | DNS server for lookups |
+| `--etcd-endpoints` / `DAD_ETCD_ENDPOINTS` | `http://127.0.0.1:2379` | Comma-separated etcd URLs |
+| `--etcd-path` / `DAD_ETCD_PATH` | `/skydns` | CoreDNS etcd path prefix |
+| `--ttl` | `1` | Record TTL in seconds |
+
+---
 
 ## Go Library
 
+### Discovery
+
 ```go
-import "github.com/raygj/dns-agent-discovery/pkg/discovery"
+import (
+    "time"
+    "github.com/raygj/dns-agent-discovery/pkg/discovery"
+)
 
 client := discovery.NewClient("cluster.local", "192.168.1.98:30053", 2*time.Second)
 rec, err := client.Lookup("db-reader")
-// rec.URL, rec.Caps, rec.Proto
+// rec.URL, rec.Caps, rec.Proto, rec.SRVHost, rec.SRVPort
 ```
 
-```go
-import "github.com/raygj/dns-agent-discovery/pkg/registration"
+### Registration
 
-store, _ := registration.NewStore(registration.Config{
-    Endpoints:     []string{"http://127.0.0.1:32379"},
+```go
+import (
+    "context"
+    "github.com/raygj/dns-agent-discovery/pkg/registration"
+)
+
+store, err := registration.NewStore(registration.Config{
+    Endpoints:     []string{"http://192.168.1.98:32379"},
     ClusterDomain: "cluster.local",
+    TTL:           1,
 })
+defer store.Close()
+
 store.Register(ctx, registration.RegisterOptions{
     Capability: "db-reader",
     URL:        "https://mcp.internal/v1/agents/db-reader",
@@ -63,18 +210,54 @@ store.Register(ctx, registration.RegisterOptions{
 })
 ```
 
+---
+
 ## Helm
 
 ```bash
 helm upgrade --install dns-agent-discovery charts/dns-agent-discovery \
-  --namespace dns-agent-discovery --create-namespace
+  --namespace dns-agent-discovery \
+  --create-namespace
 ```
 
-NodePort defaults: DNS `30053/udp`, etcd `32379`.
+Key `values.yaml` settings:
 
-## Discovery Flow
+| Value | Default | Description |
+|---|---|---|
+| `clusterDomain` | `cluster.local` | Zone suffix for `agents.*` |
+| `coredns.service.nodePort` | `30053` | External DNS access (UDP) |
+| `etcd.service.nodePort` | `32379` | External etcd access |
+| `coredns.ttl` | `1` | Record TTL written by registration |
 
-1. Agent registers capability → etcd (TXT + SRV in SkyDNS format)
-2. CoreDNS serves `agents.cluster.local` from etcd (TTL=1s)
-3. Orchestrator looks up `db-reader.agents.cluster.local` TXT+SRV
-4. Agent connects to returned URL, MCP `tools/list` handles schema exchange
+---
+
+## Project Layout
+
+```
+cmd/dad/                  CLI binary
+pkg/discovery/            DNS lookup client (miekg/dns)
+pkg/registration/         etcd register/deregister/list
+charts/dns-agent-discovery/   Helm: agent-coredns + etcd
+ADR-001-dns-agent-discovery.md
+```
+
+---
+
+## What This Does Not Solve
+
+By design — see ADR-001 for rationale:
+
+- **MCP tool schema registry** — handled at application layer after connect
+- **Cross-cluster / federated discovery** — future ADR
+- **Agent health / readiness signaling** — TTL is a blunt instrument for now
+- **Auth on the DNS query plane** — queries are open; registration writes should be protected (future)
+
+---
+
+## References
+
+- [ADR-001: DNS Agent Discovery](ADR-001-dns-agent-discovery.md)
+- [CoreDNS etcd plugin](https://coredns.io/plugins/etcd/)
+- [miekg/dns](https://github.com/miekg/dns)
+- [MCP Specification](https://spec.modelcontextprotocol.io)
+- IETF DNS-AID (draft, in progress)
