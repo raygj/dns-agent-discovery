@@ -149,6 +149,73 @@ Current local baseline: **~67%** statement coverage (`pkg/discovery` ~94%, `pkg/
 
 ---
 
+## Forward-Looking: Alignment with DNS-AID
+
+This project predates awareness of the IETF work, but converges on the same thesis. [DNS for AI Discovery (DNS-AID)](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-dnsaid/) (`draft-mozleywilliams-dnsop-dnsaid-02`, May 2026) standardizes DNS as a pointer layer for AI agent discovery — same day ADR-001 was written.
+
+**What we share:** DNS answers *where* to connect and *what* protocol/capability hints apply. Full schemas and tool listings stay at the application layer (MCP `tools/list`, agent cards, capability descriptors). No bespoke registry API. Direct connect after lookup.
+
+**What differs today:** DNS-AID is org-scoped and SVCB-first; this repo is cluster-scoped and TXT+SRV-first for CoreDNS/etcd compatibility.
+
+### Discovery use cases
+
+DNS-AID defines three requestor scenarios:
+
+| Use case | Requestor knows | DNS-AID approach | This project |
+|----------|-----------------|------------------|--------------|
+| **1. Known agent** | Org + agent name | SVCB query at `agent-name.example.com` | Not primary — we name by capability, not agent |
+| **2. Known org** | Org, not agent | `_index._agents.example.com` → org index → select agent | Not yet — single cluster trust domain |
+| **3. Known capability** | Capability, not org/agent | **Out of draft scope** — needs external search | **Primary** — `db-reader.agents.cluster.local` |
+
+We effectively implement a **cluster-local variant of (3)**: capability-first lookup inside one trust boundary (`cluster.local`), without cross-org federation.
+
+### Record format comparison
+
+| Concern | DNS-AID (normative) | This project (v0.1.0) |
+|---------|---------------------|------------------------|
+| **Primary RR** | [SVCB](https://datatracker.ietf.org/doc/html/rfc9460) — target, port, ALPN, structured SvcParams | TXT + SRV (SkyDNS/etcd via CoreDNS) |
+| **TXT role** | Fallback when SVCB unavailable (Section 4) | Primary metadata carrier |
+| **Protocol** | `alpn` / `bap` (e.g. `mcp`, `a2a`) | `proto=mcp` in TXT |
+| **Endpoint** | SVCB TargetName + `port` + hints | `url=https://...` in TXT + SRV host/port |
+| **Capabilities** | `cap` = descriptor URI; optional `cap-sha256` | `caps=sql,crypto` inline tags |
+| **Agent card** | `well-known=/.well-known/agent-card.json` | Deferred to MCP handshake |
+| **Trust** | DNSSEC + TLSA recommended | Open query plane; registration auth planned |
+| **TTL** | Cacheable (e.g. 3600s) — "learnable as a skill" | 1s — ephemeral K8s agent lifecycles |
+
+### Side-by-side flow
+
+```
+DNS-AID (org / internet scale)              This project (cluster scale)
+────────────────────────────────            ────────────────────────────
+agent-name.example.com                      db-reader.agents.cluster.local
+    │ SVCB (+ TLSA)                             │ TXT + SRV
+    ├─ alpn, bap, port, hints                   ├─ url=, proto=, caps=
+    ├─ well-known path                          └─ (no well-known in DNS)
+    └─ cap URI + cap-sha256
+         │                                          │
+         ▼                                          ▼
+   fetch agent card / descriptor                 MCP tools/list
+   validate TLS via TLSA                         connect to url
+```
+
+### Positioning
+
+We did not implement DNS-AID. We built a **K8s-native lab prototype** that validates the same pointer-layer idea with tooling that ships today (CoreDNS + etcd + SkyDNS keys). Migration cost when the draft stabilizes is bounded to **record format and naming** — not architecture.
+
+### Planned alignment (when draft matures)
+
+| Gap | Direction |
+|-----|-----------|
+| SVCB records | Publish SVCB alongside or instead of TXT+SRV; evaluate CoreDNS SVCB + etcd path |
+| Org index | Add `_index._agents.<domain>` for use case (2) |
+| Capability descriptors | Replace inline `caps=` tags with `cap` URI + optional `cap-sha256` |
+| DNSSEC / TLSA | Adopt for production trust boundary (see ADR red-team checklist) |
+| Cross-org capability search | Future ADR — federated index derived from (2), as draft suggests for (3) |
+
+Track draft revisions at [datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-dnsaid/](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-dnsaid/).
+
+---
+
 ## Quick Start
 
 ### Try it in 5 seconds (no Kubernetes)
@@ -297,4 +364,4 @@ By design — see ADR-001 for rationale:
 - [CoreDNS etcd plugin](https://coredns.io/plugins/etcd/)
 - [miekg/dns](https://github.com/miekg/dns)
 - [MCP Specification](https://spec.modelcontextprotocol.io)
-- IETF DNS-AID (draft, in progress)
+- [IETF DNS-AID draft — DNS for AI Discovery](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-dnsaid/)
