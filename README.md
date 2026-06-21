@@ -266,7 +266,7 @@ dad list
 dad deregister db-reader
 ```
 
-| Flag / Env | Default | Description |
+| Flag / env vars | Default | Description |
 |---|---|---|
 | `--cluster-domain` / `DAD_CLUSTER_DOMAIN` | `cluster.local` | Cluster domain suffix |
 | `--dns-server` / `DAD_DNS_SERVER` | `127.0.0.1:53` | DNS server for lookups |
